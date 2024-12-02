@@ -78,6 +78,39 @@ pub fn parse(text: &str, options: &Language) -> Result<Vec<Box<dyn Renderable>>>
     Ok(renderables)
 }
 
+/// Parses the provided &str into a number of Renderable items.
+pub fn get_variables(text: &str) -> Vec<Variable> {
+    let liquid = LiquidParser::parse(Rule::LaxLiquidFile, text)
+        .expect("Parsing with Rule::LaxLiquidFile should not raise errors, but InvalidLiquid tokens instead.")
+        .next()
+        .expect("Unwrapping LiquidFile to access the elements.")
+        .into_inner();
+
+    let mut variables = Vec::new();
+    for element in liquid {
+        if element.as_rule() == Rule::EOI {
+            break;
+        }
+        let vars = get_variables_from_pair(element);
+        variables.extend(vars);
+    }
+    variables
+}
+
+fn get_variables_from_pair(pair: Pair) -> Vec<Variable> {
+    let mut vars = Vec::new();
+    let pairs = pair.into_inner();
+    for element in pairs {
+        if element.as_rule() == Rule::Variable {
+            let var = parse_variable_pair(element);
+            vars.push(var);
+        } else {
+            vars.extend(get_variables_from_pair(element));
+        }
+    }
+    vars
+}
+
 /// Given a `Variable` as a string, parses it into a `Variable`.
 pub fn parse_variable(text: &str) -> Result<Variable> {
     let variable = LiquidParser::parse(Rule::Variable, text)
@@ -1303,5 +1336,36 @@ mod test {
 
         // Test that tags not of the form `<name>`-`end<name>` also work.
         test_custom_block_tags_impl!("startcustom", "stopcustom");
+    }
+
+    #[test]
+    fn test_simple_get_variables() {
+        let vars = get_variables("{{[foo.bar]}}");
+        vars.iter().for_each(|v| println!("Got variable {:?}", v));
+    }
+
+    #[test]
+    fn test_simple_index_literal() {
+        let vars = get_variables("{{['foo/bar']}}");
+        vars.iter().for_each(|v| println!("Got variable {:?}", v));
+    }
+
+    #[test]
+    fn test_simple_variable() {
+        let vars = get_variables("{{'lol' | append: foo}}");
+        vars.iter().for_each(|v| println!("Got variable {:?}", v));
+    }
+
+    #[test]
+    fn test_complex_get_variables() {
+        let tpl = "
+        {% if myvalue == 2 %} 
+            {{foo | plus: bar['qux']}} 
+            {{['my/index/access']}} 
+            {{plain}} 
+        {% endif %}
+        ";
+        let vars = get_variables(tpl);
+        vars.iter().for_each(|v| println!("Got variable {:?}", v));
     }
 }

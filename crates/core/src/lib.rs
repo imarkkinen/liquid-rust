@@ -24,6 +24,7 @@ pub use liquid_derive::{
 pub use model::{to_object, Object};
 pub use model::{to_value, Value, ValueCow};
 pub use model::{ObjectView, ValueView};
+pub use parser::get_variables;
 pub use parser::Language;
 pub use parser::TagTokenIter;
 pub use parser::{BlockReflection, ParseBlock, TagBlock};
@@ -33,3 +34,4 @@ pub use runtime::Expression;
 pub use runtime::Renderable;
 pub use runtime::Runtime;
 pub use runtime::Template;
+pub use runtime::Variable;

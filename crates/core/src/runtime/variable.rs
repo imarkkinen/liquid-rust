@@ -11,8 +11,8 @@ use super::Runtime;
 /// A `Value` reference.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Variable {
-    variable: Option<Scalar>,
-    indexes: Vec<Expression>,
+    pub variable: Option<Scalar>,
+    pub indexes: Vec<Expression>,
 }
 
 impl Variable {
