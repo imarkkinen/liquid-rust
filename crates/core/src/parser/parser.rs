@@ -78,8 +78,10 @@ pub fn parse(text: &str, options: &Language) -> Result<Vec<Box<dyn Renderable>>>
     Ok(renderables)
 }
 
-/// Parses the provided &str into a number of Renderable items.
-pub fn get_variables(text: &str) -> Vec<Variable> {
+/// Gets all free staticly known variables from a template
+/// Free as in it's not assigned in the template
+/// Static as in that we can determine the name of the variable statically from the template
+pub fn get_free_variables(text: &str) -> Vec<Variable> {
     let liquid = LiquidParser::parse(Rule::LaxLiquidFile, text)
         .expect("Parsing with Rule::LaxLiquidFile should not raise errors, but InvalidLiquid tokens instead.")
         .next()
@@ -87,28 +89,41 @@ pub fn get_variables(text: &str) -> Vec<Variable> {
         .into_inner();
 
     let mut variables = Vec::new();
+    let mut assignments = Vec::new();
     for element in liquid {
         if element.as_rule() == Rule::EOI {
             break;
         }
-        let vars = get_variables_from_pair(element);
+        let (vars, assigns) = get_variables_from_pair(element);
         variables.extend(vars);
+        assignments.extend(assigns);
     }
+    for a in assignments {
+        variables.retain(|v| *v != a);
+    }
+
     variables
 }
 
-fn get_variables_from_pair(pair: Pair) -> Vec<Variable> {
+fn get_variables_from_pair(pair: Pair) -> (Vec<Variable>, Vec<Variable>) {
     let mut vars = Vec::new();
+    let mut assignments = Vec::new();
     let pairs = pair.into_inner();
     for element in pairs {
         if element.as_rule() == Rule::Variable {
             let var = parse_variable_pair(element);
             vars.push(var);
+        } else if element.as_rule() == Rule::Assign {
+            if let Some(v) = vars.last().cloned() {
+                assignments.push(v);
+            }
         } else {
-            vars.extend(get_variables_from_pair(element));
+            let (inner_vars, inner_assigments) = get_variables_from_pair(element);
+            vars.extend(inner_vars);
+            assignments.extend(inner_assigments);
         }
     }
-    vars
+    (vars, assignments)
 }
 
 /// Given a `Variable` as a string, parses it into a `Variable`.
@@ -1340,19 +1355,19 @@ mod test {
 
     #[test]
     fn test_simple_get_variables() {
-        let vars = get_variables("{{[foo.bar]}}");
+        let vars = get_free_variables("{{[foo.bar]}}");
         vars.iter().for_each(|v| println!("Got variable {:?}", v));
     }
 
     #[test]
     fn test_simple_index_literal() {
-        let vars = get_variables("{{['foo/bar']}}");
+        let vars = get_free_variables("{{['foo/bar']}}");
         vars.iter().for_each(|v| println!("Got variable {:?}", v));
     }
 
     #[test]
     fn test_simple_variable() {
-        let vars = get_variables("{{'lol' | append: foo}}");
+        let vars = get_free_variables("{{'lol' | append: foo}}");
         vars.iter().for_each(|v| println!("Got variable {:?}", v));
     }
 
@@ -1365,7 +1380,36 @@ mod test {
             {{plain}} 
         {% endif %}
         ";
-        let vars = get_variables(tpl);
+        let vars = get_free_variables(tpl);
+        vars.iter().for_each(|v| println!("Got variable {:?}", v));
+    }
+
+    #[test]
+    fn assignments_are_not_variables() {
+        let tpl = r#"
+            {% assign discount_number = discount_percent | times: 1.0 %}
+            {% if discount_number < 10 %}
+                0
+            {% else %}
+                1
+            {% endif %}"
+        "#;
+        let vars = get_free_variables(&tpl);
+        vars.iter().for_each(|v| println!("Got variable {:?}", v));
+    }
+
+    #[test]
+    fn assignment_aliases_are_not_variables() {
+        let tpl = r#"
+            {% assign my_obj.value = discount_percent | times: 1.0 %}
+            {% assign ['the_what'] = other_var.value %}
+            {% if my_obj['value'] < 10 %}
+                {{the_what}}
+            {% else %}
+                1
+            {% endif %}"
+        "#;
+        let vars = get_free_variables(tpl);
         vars.iter().for_each(|v| println!("Got variable {:?}", v));
     }
 }

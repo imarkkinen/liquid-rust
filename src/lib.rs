@@ -39,7 +39,7 @@ pub mod model {
 
 pub use crate::parser::*;
 pub use crate::template::*;
-pub use liquid_core::get_variables;
+pub use liquid_core::get_free_variables;
 pub use liquid_core::model::{_ObjectView as ObjectView, _ValueView as ValueView};
 pub use liquid_core::object;
 pub use liquid_core::to_object;
