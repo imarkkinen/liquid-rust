@@ -81,7 +81,7 @@ pub fn parse(text: &str, options: &Language) -> Result<Vec<Box<dyn Renderable>>>
 /// Gets all free staticly known variables from a template
 /// Free as in it's not assigned in the template
 /// Static as in that we can determine the name of the variable statically from the template
-pub fn get_free_variables(text: &str) -> Vec<Variable> {
+pub fn get_free_variables(text: &str, options: &Language) -> Vec<Variable> {
     let liquid = LiquidParser::parse(Rule::LaxLiquidFile, text)
         .expect("Parsing with Rule::LaxLiquidFile should not raise errors, but InvalidLiquid tokens instead.")
         .next()
@@ -98,39 +98,31 @@ pub fn get_free_variables(text: &str) -> Vec<Variable> {
         if element.as_rule() == Rule::Tag {
             if let BlockElement::Tag(mut tag) = element.into() {
                 if tag.name() == "assign" {
-                    let assign_to = tag.tokens().next().unwrap().token;
-                    println!(
-                        "Assign to {}, {:?}",
-                        assign_to.as_str(),
-                        assign_to.as_rule()
-                    );
-                    match assign_to.as_rule() {
-                        Rule::Identifier => {
-                            assignments.push(Variable::with_literal(assign_to.as_str().to_owned()))
-                        }
-                        _ => unreachable!(),
-                    };
+                    if let Some(assign_to) = tag.tokens().next() {
+                        if assign_to.token.as_rule() == Rule::FilterChain {
+                            let filter_chain = parse_filter_chain(assign_to.token, options);
+                            if let Ok(filter_chain) = filter_chain {
+                                if let Expression::Variable(v) = filter_chain.entry {
+                                    assignments.push(v);
+                                }
+                            }
+                        };
+                    }
 
-                    let var = parse_variable_pair(assign_to);
-                    assignments.push(var);
                     for t in tag.tokens() {
-                        println!("After assign {}", t.as_str());
-                        let (inner_vars, inner_assigments) = get_variables_from_pair(t.token);
+                        let inner_vars = get_variables_from_pair(t.token);
                         variables.extend(inner_vars);
-                        assignments.extend(inner_assigments);
                     }
                 } else {
                     for t in tag.tokens() {
-                        let (inner_vars, inner_assigments) = get_variables_from_pair(t.token);
+                        let inner_vars = get_variables_from_pair(t.token);
                         variables.extend(inner_vars);
-                        assignments.extend(inner_assigments);
                     }
                 }
             }
         } else {
-            let (vars, assigns) = get_variables_from_pair(element);
+            let vars = get_variables_from_pair(element);
             variables.extend(vars);
-            assignments.extend(assigns);
         }
     }
     for a in assignments {
@@ -140,25 +132,19 @@ pub fn get_free_variables(text: &str) -> Vec<Variable> {
     variables
 }
 
-fn get_variables_from_pair(pair: Pair) -> (Vec<Variable>, Vec<Variable>) {
+fn get_variables_from_pair(pair: Pair) -> Vec<Variable> {
     let mut vars = Vec::new();
-    let mut assignments = Vec::new();
     let pairs = pair.into_inner();
     for element in pairs {
         if element.as_rule() == Rule::Variable {
             let var = parse_variable_pair(element);
             vars.push(var);
-        //} else if element.as_rule() == Rule::Assign {
-        // if let Some(v) = vars.last().cloned() {
-        //     assignments.push(v);
-        // }
         } else {
-            let (inner_vars, inner_assigments) = get_variables_from_pair(element);
+            let inner_vars = get_variables_from_pair(element);
             vars.extend(inner_vars);
-            assignments.extend(inner_assigments);
         }
     }
-    (vars, assignments)
+    vars
 }
 
 /// Given a `Variable` as a string, parses it into a `Variable`.
@@ -1390,19 +1376,24 @@ mod test {
 
     #[test]
     fn test_simple_get_variables() {
-        let vars = get_free_variables("{{[foo.bar]}}");
-        vars.iter().for_each(|v| println!("Got variable {:?}", v));
+        let vars = get_free_variables("{{[foo.bar]}}", &Language::default());
+        assert_eq!(1, vars.len());
+        let mut expected = Variable::empty();
+        expected.extend(vec![Expression::Variable(
+            Variable::with_literal("foo").push_literal("bar"),
+        )]);
+        assert_eq!(expected, *vars.first().unwrap());
     }
 
     #[test]
     fn test_simple_index_literal() {
-        let vars = get_free_variables("{{['foo/bar']}}");
+        let vars = get_free_variables("{{['foo/bar']}}", &Language::default());
         vars.iter().for_each(|v| println!("Got variable {:?}", v));
     }
 
     #[test]
     fn test_simple_variable() {
-        let vars = get_free_variables("{{'lol' | append: foo}}");
+        let vars = get_free_variables("{{'lol' | append: foo}}", &Language::default());
         vars.iter().for_each(|v| println!("Got variable {:?}", v));
     }
 
@@ -1415,7 +1406,7 @@ mod test {
             {{plain}} 
         {% endif %}
         ";
-        let vars = get_free_variables(tpl);
+        let vars = get_free_variables(tpl, &Language::default());
         vars.iter().for_each(|v| println!("Got variable {:?}", v));
     }
 
@@ -1429,7 +1420,7 @@ mod test {
                 1
             {% endif %}"
         "#;
-        let vars = get_free_variables(&tpl);
+        let vars = get_free_variables(&tpl, &Language::default());
         vars.iter().for_each(|v| println!("Got variable {:?}", v));
     }
 
@@ -1444,7 +1435,7 @@ mod test {
                 1
             {% endif %}"
         "#;
-        let vars = get_free_variables(tpl);
+        let vars = get_free_variables(tpl, &Language::default());
         vars.iter().for_each(|v| println!("Got variable {:?}", v));
     }
 
@@ -1460,7 +1451,7 @@ mod test {
                 1
             {% endif %}"
         "#;
-        let vars = get_free_variables(tpl);
+        let vars = get_free_variables(tpl, &Language::default());
         vars.iter().for_each(|v| println!("Got variable {:?}", v));
     }
 }

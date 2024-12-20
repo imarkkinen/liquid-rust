@@ -11,7 +11,7 @@ use crate::runtime::Runtime;
 /// A `Value` expression.
 #[derive(Debug)]
 pub struct FilterChain {
-    entry: Expression,
+    pub entry: Expression,
     filters: Vec<Box<dyn Filter>>,
 }
 
