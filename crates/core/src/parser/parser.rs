@@ -1388,13 +1388,18 @@ mod test {
     #[test]
     fn test_simple_index_literal() {
         let vars = get_free_variables("{{['foo/bar']}}", &Language::default());
-        vars.iter().for_each(|v| println!("Got variable {:?}", v));
+        assert_eq!(1, vars.len());
+        let mut expected = Variable::empty();
+        expected.extend(vec![Expression::Literal(Value::Scalar("foo/bar".into()))]);
+        assert_eq!(expected, *vars.first().unwrap());
     }
 
     #[test]
     fn test_simple_variable() {
         let vars = get_free_variables("{{'lol' | append: foo}}", &Language::default());
-        vars.iter().for_each(|v| println!("Got variable {:?}", v));
+        assert_eq!(1, vars.len());
+        let expected = Variable::with_literal("foo");
+        assert_eq!(expected, *vars.first().unwrap());
     }
 
     #[test]
@@ -1402,7 +1407,6 @@ mod test {
         let tpl = "
         {% if myvalue == 2 %} 
             {{foo | plus: bar['qux']}} 
-            {{['my/index/access']}} 
             {{plain}} 
         {% endif %}
         ";
