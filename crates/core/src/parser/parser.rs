@@ -94,9 +94,44 @@ pub fn get_free_variables(text: &str) -> Vec<Variable> {
         if element.as_rule() == Rule::EOI {
             break;
         }
-        let (vars, assigns) = get_variables_from_pair(element);
-        variables.extend(vars);
-        assignments.extend(assigns);
+        println!("got element {}, {:?}", element, element.as_rule());
+        if element.as_rule() == Rule::Tag {
+            if let BlockElement::Tag(mut tag) = element.into() {
+                if tag.name() == "assign" {
+                    let assign_to = tag.tokens().next().unwrap().token;
+                    println!(
+                        "Assign to {}, {:?}",
+                        assign_to.as_str(),
+                        assign_to.as_rule()
+                    );
+                    match assign_to.as_rule() {
+                        Rule::Identifier => {
+                            assignments.push(Variable::with_literal(assign_to.as_str().to_owned()))
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    let var = parse_variable_pair(assign_to);
+                    assignments.push(var);
+                    for t in tag.tokens() {
+                        println!("After assign {}", t.as_str());
+                        let (inner_vars, inner_assigments) = get_variables_from_pair(t.token);
+                        variables.extend(inner_vars);
+                        assignments.extend(inner_assigments);
+                    }
+                } else {
+                    for t in tag.tokens() {
+                        let (inner_vars, inner_assigments) = get_variables_from_pair(t.token);
+                        variables.extend(inner_vars);
+                        assignments.extend(inner_assigments);
+                    }
+                }
+            }
+        } else {
+            let (vars, assigns) = get_variables_from_pair(element);
+            variables.extend(vars);
+            assignments.extend(assigns);
+        }
     }
     for a in assignments {
         variables.retain(|v| *v != a);
@@ -113,10 +148,10 @@ fn get_variables_from_pair(pair: Pair) -> (Vec<Variable>, Vec<Variable>) {
         if element.as_rule() == Rule::Variable {
             let var = parse_variable_pair(element);
             vars.push(var);
-        } else if element.as_rule() == Rule::Assign {
-            if let Some(v) = vars.last().cloned() {
-                assignments.push(v);
-            }
+        //} else if element.as_rule() == Rule::Assign {
+        // if let Some(v) = vars.last().cloned() {
+        //     assignments.push(v);
+        // }
         } else {
             let (inner_vars, inner_assigments) = get_variables_from_pair(element);
             vars.extend(inner_vars);
@@ -1402,6 +1437,22 @@ mod test {
     fn assignment_aliases_are_not_variables() {
         let tpl = r#"
             {% assign my_obj.value = discount_percent | times: 1.0 %}
+            {% assign ['the_what'] = other_var.value %}
+            {% if my_obj['value'] < 10 %}
+                {{the_what}}
+            {% else %}
+                1
+            {% endif %}"
+        "#;
+        let vars = get_free_variables(tpl);
+        vars.iter().for_each(|v| println!("Got variable {:?}", v));
+    }
+
+    #[test]
+    fn get_variables_from_invalid_template() {
+        let tpl = r#"
+            {{my_value}}
+            {% assign discount_percent['field'] %}
             {% assign ['the_what'] = other_var.value %}
             {% if my_obj['value'] < 10 %}
                 {{the_what}}
