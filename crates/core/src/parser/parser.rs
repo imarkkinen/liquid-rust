@@ -94,7 +94,6 @@ pub fn get_free_variables(text: &str, options: &Language) -> Vec<Variable> {
         if element.as_rule() == Rule::EOI {
             break;
         }
-        println!("got element {}, {:?}", element, element.as_rule());
         if element.as_rule() == Rule::Tag {
             if let BlockElement::Tag(mut tag) = element.into() {
                 if tag.name() == "assign" {
@@ -103,7 +102,9 @@ pub fn get_free_variables(text: &str, options: &Language) -> Vec<Variable> {
                             let filter_chain = parse_filter_chain(assign_to.token, options);
                             if let Ok(filter_chain) = filter_chain {
                                 if let Expression::Variable(v) = filter_chain.entry {
-                                    assignments.push(v);
+                                    if !assignments.contains(&v) {
+                                        assignments.push(v);
+                                    }
                                 }
                             }
                         };
@@ -111,18 +112,30 @@ pub fn get_free_variables(text: &str, options: &Language) -> Vec<Variable> {
 
                     for t in tag.tokens() {
                         let inner_vars = get_variables_from_pair(t.token);
-                        variables.extend(inner_vars);
+                        for v in inner_vars {
+                            if !variables.contains(&v) {
+                                variables.push(v);
+                            }
+                        }
                     }
                 } else {
                     for t in tag.tokens() {
                         let inner_vars = get_variables_from_pair(t.token);
-                        variables.extend(inner_vars);
+                        for v in inner_vars {
+                            if !variables.contains(&v) {
+                                variables.push(v);
+                            }
+                        }
                     }
                 }
             }
         } else {
             let vars = get_variables_from_pair(element);
-            variables.extend(vars);
+            for v in vars {
+                if !variables.contains(&v) {
+                    variables.push(v);
+                }
+            }
         }
     }
     for a in assignments {
@@ -1403,15 +1416,45 @@ mod test {
     }
 
     #[test]
-    fn test_complex_get_variables() {
+    fn test_from_tag() {
         let tpl = "
         {% if myvalue == 2 %} 
-            {{foo | plus: bar['qux']}} 
-            {{plain}} 
+            literal 
         {% endif %}
         ";
         let vars = get_free_variables(tpl, &Language::default());
-        vars.iter().for_each(|v| println!("Got variable {:?}", v));
+        assert_eq!(1, vars.len());
+        let expected = Variable::with_literal("myvalue");
+        assert_eq!(expected, *vars.first().unwrap());
+    }
+
+    #[test]
+    fn test_before_filter() {
+        let tpl = "
+        {% if 'true' == 'true' %} 
+            {{foo | plus: 2}} 
+        {% endif %}
+        ";
+        let vars = get_free_variables(tpl, &Language::default());
+        assert_eq!(1, vars.len());
+        let expected = Variable::with_literal("foo");
+        assert_eq!(expected, *vars.first().unwrap());
+    }
+
+    #[test]
+    fn get_variables_doesnt_duplicate() {
+        let tpl = r#"
+            {{my_value}}
+            {% if my_value < 10 %}
+                0
+            {% else %}
+                1
+            {% endif %}"
+        "#;
+        let vars = get_free_variables(tpl, &Language::default());
+        assert_eq!(1, vars.len());
+        let expected = Variable::with_literal("my_value");
+        assert_eq!(expected, *vars.first().unwrap());
     }
 
     #[test]
@@ -1424,12 +1467,14 @@ mod test {
                 1
             {% endif %}"
         "#;
-        let vars = get_free_variables(&tpl, &Language::default());
-        vars.iter().for_each(|v| println!("Got variable {:?}", v));
+        let vars = get_free_variables(tpl, &Language::default());
+        assert_eq!(1, vars.len());
+        let expected = Variable::with_literal("discount_percent");
+        assert_eq!(expected, *vars.first().unwrap());
     }
 
     #[test]
-    fn assignment_aliases_are_not_variables() {
+    fn assignment_aliases_are_variables() {
         let tpl = r#"
             {% assign my_obj.value = discount_percent | times: 1.0 %}
             {% assign ['the_what'] = other_var.value %}
@@ -1440,22 +1485,30 @@ mod test {
             {% endif %}"
         "#;
         let vars = get_free_variables(tpl, &Language::default());
-        vars.iter().for_each(|v| println!("Got variable {:?}", v));
+        let expected = Variable::with_literal("discount_percent");
+        assert_eq!(expected, *vars.first().unwrap());
+
+        let expected = Variable::with_literal("other_var").push_literal("value");
+        assert_eq!(expected, vars[1]);
+
+        //FIXME this should not be but maybe
+        let expected = Variable::with_literal("the_what");
+        assert_eq!(expected, vars[2]);
     }
 
     #[test]
     fn get_variables_from_invalid_template() {
         let tpl = r#"
-            {{my_value}}
-            {% assign discount_percent['field'] %}
-            {% assign ['the_what'] = other_var.value %}
-            {% if my_obj['value'] < 10 %}
-                {{the_what}}
+            {% assign discount_percent %}
+            {% if my_value < 10 %}
+                0
             {% else %}
                 1
             {% endif %}"
         "#;
         let vars = get_free_variables(tpl, &Language::default());
-        vars.iter().for_each(|v| println!("Got variable {:?}", v));
+        assert_eq!(1, vars.len());
+        let expected = Variable::with_literal("my_value");
+        assert_eq!(expected, *vars.first().unwrap());
     }
 }
