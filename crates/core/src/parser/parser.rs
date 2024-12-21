@@ -81,7 +81,7 @@ pub fn parse(text: &str, options: &Language) -> Result<Vec<Box<dyn Renderable>>>
 /// Gets all free staticly known variables from a template
 /// Free as in it's not assigned in the template
 /// Static as in that we can determine the name of the variable statically from the template
-pub fn get_free_variables(text: &str, options: &Language) -> Vec<Variable> {
+pub fn get_free_variables(text: &str) -> Vec<Variable> {
     let liquid = LiquidParser::parse(Rule::LaxLiquidFile, text)
         .expect("Parsing with Rule::LaxLiquidFile should not raise errors, but InvalidLiquid tokens instead.")
         .next()
@@ -99,7 +99,8 @@ pub fn get_free_variables(text: &str, options: &Language) -> Vec<Variable> {
                 if tag.name() == "assign" {
                     if let Some(assign_to) = tag.tokens().next() {
                         if assign_to.token.as_rule() == Rule::FilterChain {
-                            let filter_chain = parse_filter_chain(assign_to.token, options);
+                            let filter_chain =
+                                parse_filter_chain(assign_to.token, &Default::default());
                             if let Ok(filter_chain) = filter_chain {
                                 if let Expression::Variable(v) = filter_chain.entry {
                                     if !assignments.contains(&v) {
@@ -1389,7 +1390,7 @@ mod test {
 
     #[test]
     fn test_simple_get_variables() {
-        let vars = get_free_variables("{{[foo.bar]}}", &Language::default());
+        let vars = get_free_variables("{{[foo.bar]}}");
         assert_eq!(1, vars.len());
         let mut expected = Variable::empty();
         expected.extend(vec![Expression::Variable(
@@ -1400,7 +1401,7 @@ mod test {
 
     #[test]
     fn test_simple_index_literal() {
-        let vars = get_free_variables("{{['foo/bar']}}", &Language::default());
+        let vars = get_free_variables("{{['foo/bar']}}");
         assert_eq!(1, vars.len());
         let mut expected = Variable::empty();
         expected.extend(vec![Expression::Literal(Value::Scalar("foo/bar".into()))]);
@@ -1409,7 +1410,7 @@ mod test {
 
     #[test]
     fn test_simple_variable() {
-        let vars = get_free_variables("{{'lol' | append: foo}}", &Language::default());
+        let vars = get_free_variables("{{'lol' | append: foo}}");
         assert_eq!(1, vars.len());
         let expected = Variable::with_literal("foo");
         assert_eq!(expected, *vars.first().unwrap());
@@ -1422,7 +1423,7 @@ mod test {
             literal 
         {% endif %}
         ";
-        let vars = get_free_variables(tpl, &Language::default());
+        let vars = get_free_variables(tpl);
         assert_eq!(1, vars.len());
         let expected = Variable::with_literal("myvalue");
         assert_eq!(expected, *vars.first().unwrap());
@@ -1435,7 +1436,7 @@ mod test {
             {{foo | plus: 2}} 
         {% endif %}
         ";
-        let vars = get_free_variables(tpl, &Language::default());
+        let vars = get_free_variables(tpl);
         assert_eq!(1, vars.len());
         let expected = Variable::with_literal("foo");
         assert_eq!(expected, *vars.first().unwrap());
@@ -1451,7 +1452,7 @@ mod test {
                 1
             {% endif %}"
         "#;
-        let vars = get_free_variables(tpl, &Language::default());
+        let vars = get_free_variables(tpl);
         assert_eq!(1, vars.len());
         let expected = Variable::with_literal("my_value");
         assert_eq!(expected, *vars.first().unwrap());
@@ -1467,7 +1468,7 @@ mod test {
                 1
             {% endif %}"
         "#;
-        let vars = get_free_variables(tpl, &Language::default());
+        let vars = get_free_variables(tpl);
         assert_eq!(1, vars.len());
         let expected = Variable::with_literal("discount_percent");
         assert_eq!(expected, *vars.first().unwrap());
@@ -1484,7 +1485,7 @@ mod test {
                 1
             {% endif %}"
         "#;
-        let vars = get_free_variables(tpl, &Language::default());
+        let vars = get_free_variables(tpl);
         let expected = Variable::with_literal("discount_percent");
         assert_eq!(expected, *vars.first().unwrap());
 
@@ -1506,7 +1507,7 @@ mod test {
                 1
             {% endif %}"
         "#;
-        let vars = get_free_variables(tpl, &Language::default());
+        let vars = get_free_variables(tpl);
         assert_eq!(1, vars.len());
         let expected = Variable::with_literal("my_value");
         assert_eq!(expected, *vars.first().unwrap());
